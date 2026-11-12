@@ -1,0 +1,5 @@
+.qa
+tests
+__pycache__
+.env*
+301.txt

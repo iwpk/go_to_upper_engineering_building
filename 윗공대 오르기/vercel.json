@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/rooms.py": { "maxDuration": 15, "excludeFiles": "{assets/**,tests/**,.qa/**}" }
+  }
+}
