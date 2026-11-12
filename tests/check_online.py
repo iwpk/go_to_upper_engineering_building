@@ -38,7 +38,9 @@ async function run(){
   await until(()=>!h.document.getElementById('startOnline').hidden,'data channel');results.push('PASS real offer/answer and data channel');
   h.eval("selectDifficulty('hard')");h.document.getElementById('startOnline').click();await until(()=>g.eval('mode')==='guest','shared start');
   if(g.eval('race.difficulty')!=='hard'||h.eval('JSON.stringify(race.rocks)')!==g.eval('JSON.stringify(race.rocks)'))throw Error('difficulty or randomized course mismatch');results.push('PASS host difficulty and randomized course match on guest');
+  if(h.eval('bgmWanted')||g.eval('bgmWanted'))throw Error('BGM started during countdown');results.push('PASS countdown leaves BGM stopped on both players');
   await until(()=>h.eval('race.t')>0,'countdown');results.push('PASS shared start and countdown');
+  await until(()=>h.eval('bgm.readyState>=2&&!bgm.paused&&bgm.loop')&&g.eval('bgm.readyState>=2&&!bgm.paused&&bgm.loop'),'looping BGM');results.push('PASS both players load and play looping BGM');
   g.eval("input('jump')");await until(()=>h.eval('race.players[1].jump')>0,'guest input');results.push('PASS guest input reaches authoritative host');
   await until(()=>g.eval('race.players[1].jump')>0,'state update');results.push('PASS authoritative state reaches guest');
   if(h.eval('myIndex')!==0||g.eval('myIndex')!==1)throw Error('player indices incorrect');
@@ -51,6 +53,7 @@ async function run(){
   await until(()=>g.eval('race.players[1].knockback===null&&race.players[1].d<690'),'landing state');results.push('PASS airborne knockback and landing synchronize');
   h.eval('race.players[1].d=1499.99');await until(()=>g.eval('race.done'),'finish');
   if(g.eval('race.winner')!==1)throw Error('winner mismatch');results.push('PASS shared winning result');
+  if(!h.eval('bgm.paused&&!bgmWanted&&bgm.currentTime===0')||!g.eval('bgm.paused&&!bgmWanted&&bgm.currentTime===0'))throw Error('BGM did not stop on result');results.push('PASS winning and losing results stop and rewind BGM');
   h.document.getElementById('mainBtn').click();await until(()=>g.eval('mode')==='menu','disconnect');results.push('PASS result main-menu button ends opponent session');
  }catch(e){results.push('FAIL '+e.message)}
  document.body.insertAdjacentHTML('beforeend','<pre>'+results.join('\n')+'</pre>');
@@ -64,15 +67,23 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        content_type = 'text/html; charset=utf-8'
         if self.path == '/hold':
             complete.wait(25)
             content = b''
         elif self.path == '/game':
             content = (ROOT / 'index.html').read_bytes()
+        elif self.path == '/assets/bgm.wav':
+            content = (ROOT / 'assets' / 'bgm.wav').read_bytes()
+            content_type = 'audio/wav'
+        elif self.path in ['/assets/bgm-loop.js', '/assets/audio-player.js']:
+            content = (ROOT / self.path.lstrip('/')).read_bytes()
+            content_type = 'application/javascript; charset=utf-8'
         else:
             content = page.encode()
         self.send_response(200)
-        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(content)))
         self.end_headers()
         self.wfile.write(content)
 
@@ -88,7 +99,7 @@ try:
     with tempfile.TemporaryDirectory(prefix='uphill-online-') as profile:
         result = subprocess.run([str(chrome), '--headless', '--disable-gpu', '--no-first-run',
             '--no-default-browser-check', '--user-data-dir=' + profile,
-            '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
+            '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--autoplay-policy=no-user-gesture-required',
             '--dump-dom', 'http://127.0.0.1:' + str(server.server_port)],
             capture_output=True, encoding='utf-8', errors='replace', timeout=40)
     print('\n'.join(report) if report else result.stderr[-2000:])
