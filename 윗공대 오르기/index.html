@@ -81,14 +81,14 @@ function selectDifficulty(value){if(!DIFFICULTIES[value])return;selectedDifficul
 document.querySelectorAll('[name="difficulty"]').forEach(el=>el.addEventListener('change',()=>selectDifficulty(el.value)));
 function clock(s,precise=false){const ticks=Math.max(0,Math.round(s*100));return String(Math.floor(ticks/6000)).padStart(2,'0')+':'+String(Math.floor(ticks/100)%60).padStart(2,'0')+(precise?'.'+String(ticks%100).padStart(2,'0'):'')}
 function showBest(){$('best').textContent=best?clock(best,true):'-- : --';$('bestDifficulty').textContent=DIFFICULTIES[selectedDifficulty].name}selectDifficulty(selectedDifficulty);
-function player(){return {d:0,jump:0,vy:0,dodge:0,carDodge:0,avoidedCars:[],stunKind:null,knockback:null,carHits:0,busBells:0,bellRung:false,avoidedBuses:[],rideRoute:null,stun:0,ride:null,inv:0,hits:[],finish:null}}
+function player(){return {d:0,jump:0,vy:0,dodge:0,carDodge:0,avoidedCars:[],stunKind:null,knockback:null,carHits:0,busBells:0,bellRung:false,avoidedBuses:[],rideRoute:null,stun:0,ride:null,inv:{rock:0,car:0,bus:0},hits:[],finish:null}}
 function newRace(count,difficulty=selectedDifficulty,seed=crypto.getRandomValues(new Uint32Array(1))[0]){return {difficulty,seed,rng:seed>>>0,rocks:makeRocks(difficulty,seed),t:-3,players:Array.from({length:count},player),buses:[],cars:[],nextCar:3,carId:0,nextBus:7,busId:0,done:false,winner:null}}
 let race=newRace(1),mode='menu',myIndex=0,paused=false,finishedShown=false,lastStatus='',accumulator=0,lastTime=0,netClock=0;
 function carInterval(){return interval('cars')}
-function action(p,key){if(!p||race.t<0||race.done||p.ride!==null||p.finish!==null||p.stun>0||p.knockback!==null)return false;
- if(key==='jump'){if(p.jump>0)return false;p.vy=JUMP_SPEED;p.jump=.01}
- else if(key==='carDodge'){p.carDodge=.9;p.dodge=0;for(const c of race.cars){const ahead=c.d-p.d;if(ahead>=-CAR_CONTACT&&ahead<=VIEW_RADIUS+CAR_CONTACT&&!p.avoidedCars.includes(c.id))p.avoidedCars.push(c.id)}}
- else if(key==='dodge'){p.dodge=.9;p.carDodge=0;for(const b of race.buses){const ahead=b.d-p.d;if(ahead>=-BUS_CONTACT&&ahead<=VIEW_RADIUS+5&&!p.avoidedBuses.includes(b.id))p.avoidedBuses.push(b.id)}}
+function action(p,key){if(!p||race.t<0||race.done||p.ride!==null||p.finish!==null||p.knockback!==null)return false;
+ if(key==='jump'){if(p.stun>0||p.jump>0)return false;p.vy=JUMP_SPEED;p.jump=.01}
+ else if(key==='carDodge'){p.carDodge=.7;p.dodge=0;p.avoidedBuses=[]}
+ else if(key==='dodge'){p.dodge=.7;p.carDodge=0;p.avoidedCars=[]}
  else return false;
  if(p===race.players[myIndex])playSfx(key);return true;
 }
@@ -96,6 +96,9 @@ function input(key){if(mode==='menu'||paused||race.done)return;if(mode==='guest'
 function previousStop(d){return [...STOPS].reverse().find(s=>s.d<d-.01)||STOPS[0]}
 // Equal downhill speeds preserve spacing for BOTH players, even when their distances differ.
 function spawnTraffic(kind){const d=Math.min(1590,Math.max(...race.players.map(p=>p.d))+115);if([...race.buses,...race.cars].some(v=>Math.abs(v.d-d)<trafficGap()))return false;if(kind==='bus'){race.buses.push({route:BUS_ROUTES[race.busId%BUS_ROUTES.length],id:race.busId++,d})}else{const id=race.carId++;race.cars.push({id,d,color:CAR_COLORS[id%4],model:Math.floor(id/4)%2?'suv':'sedan'})}return true}
+// Vehicle noses face downhill (left). Sweep only a narrow front strip, not the body.
+const BUS_FRONT=73/14.2,CAR_FRONT=47/16,FRONT_CONTACT=.35;
+function frontContact(vehicle,oldDistance,distance,dt,speed,front){const before=vehicle.d+speed*dt-oldDistance-front,after=vehicle.d-distance-front;return before>=-FRONT_CONTACT&&after<=FRONT_CONTACT}
 function step(dt){if(race.done)return;race.t+=dt;if(race.t<0)return;syncRaceBgm();
  if(race.t>=race.nextBus)race.nextBus=race.t+(spawnTraffic('bus')?interval('buses'):.1);
  // Reserve the next bus slot so frequent cars cannot postpone buses indefinitely.
@@ -103,15 +106,15 @@ function step(dt){if(race.done)return;race.t+=dt;if(race.t<0)return;syncRaceBgm(
  for(const b of race.buses)b.d-=BUS_SPEED*dt;
  race.buses=race.buses.filter(b=>b.d>-80);
  for(const c of race.cars)c.d-=CAR_SPEED*dt;race.cars=race.cars.filter(c=>c.d>-80);
- for(const p of race.players){if(p.finish!==null)continue;p.avoidedBuses=p.avoidedBuses.filter(id=>race.buses.some(b=>b.id===id));p.avoidedCars=p.avoidedCars.filter(id=>race.cars.some(c=>c.id===id));p.carDodge=Math.max(0,p.carDodge-dt);p.dodge=Math.max(0,p.dodge-dt);p.stun=Math.max(0,p.stun-dt);p.inv=Math.max(0,p.inv-dt);
+ for(const p of race.players){if(p.finish!==null)continue;p.avoidedBuses=p.avoidedBuses.filter(id=>race.buses.some(b=>b.id===id));p.avoidedCars=p.avoidedCars.filter(id=>race.cars.some(c=>c.id===id));p.carDodge=Math.max(0,p.carDodge-dt);p.dodge=Math.max(0,p.dodge-dt);if(p.carDodge<1e-9){p.carDodge=0;p.avoidedCars=[]}if(p.dodge<1e-9){p.dodge=0;p.avoidedBuses=[]}p.stun=Math.max(0,p.stun-dt);for(const kind of ['rock','car','bus'])p.inv[kind]=Math.max(0,p.inv[kind]-dt);
   if(p.knockback!==null){const f=p.knockback;f.elapsed=Math.min(FLIGHT_TIME,f.elapsed+dt);const u=f.elapsed/FLIGHT_TIME;p.d=f.from+(f.to-f.from)*u;p.jump=f.startJump*(1-u)+4*FLIGHT_HEIGHT*u*(1-u);
-   if(f.elapsed>=FLIGHT_TIME){p.d=f.to;p.jump=0;p.vy=0;p.knockback=null;p.inv=1;p.hits=p.hits.filter(i=>race.rocks[i].d<=p.d)}continue}
+   if(f.elapsed>=FLIGHT_TIME){p.d=f.to;p.jump=0;p.vy=0;p.knockback=null;p.inv.car=1;p.hits=p.hits.filter(i=>race.rocks[i].d<=p.d)}continue}
   if(p.jump>0){p.vy-=GRAVITY*dt;p.jump=Math.max(0,p.jump+p.vy*dt)}
-  if(p.ride!==null){if(!p.bellRung&&p.d-p.ride-90*dt<=99){p.busBells++;p.bellRung=true}p.d=Math.max(p.ride,p.d-90*dt);if(p.d<=p.ride){p.ride=null;p.inv=2.5;p.hits=p.hits.filter(i=>race.rocks[i].d<=p.d)}continue}
+  if(p.ride!==null){if(!p.bellRung&&p.d-p.ride-90*dt<=99){p.busBells++;p.bellRung=true}p.d=Math.max(p.ride,p.d-90*dt);if(p.d<=p.ride){p.ride=null;p.inv.bus=2.5;p.hits=p.hits.filter(i=>race.rocks[i].d<=p.d)}continue}
   const old=p.d;if(p.stun<=0)p.d=Math.min(TOTAL,p.d+SPEED*dt);
-  for(let i=0;i<race.rocks.length;i++){const r=race.rocks[i];if(old<=r.d&&p.d>=r.d&&!p.hits.includes(i)){p.hits.push(i);if(p.jump<3&&p.inv<=0){p.stun=1;p.stunKind='rock';p.jump=0;p.vy=0}}}
-  for(const b of race.buses){if(Math.abs(b.d-p.d)<BUS_CONTACT){if(p.dodge>0&&!p.avoidedBuses.includes(b.id))p.avoidedBuses.push(b.id);if(p.avoidedBuses.includes(b.id)||p.inv>0)continue;p.rideRoute=b.route||BUS_ROUTES[0];p.ride=previousStop(p.d).d;p.bellRung=false;if(p.d-p.ride<=99){p.busBells++;p.bellRung=true}p.jump=0;p.vy=0;p.dodge=0;break}}
-  if(p.ride===null)for(const c of race.cars){if(Math.abs(c.d-p.d)<CAR_CONTACT){if(p.carDodge>0&&!p.avoidedCars.includes(c.id))p.avoidedCars.push(c.id);if(p.avoidedCars.includes(c.id)||p.inv>0)continue;p.avoidedCars.push(c.id);p.carHits++;p.knockback={from:p.d,to:Math.max(0,p.d-30),elapsed:0,startJump:p.jump};p.stun=0;p.stunKind=null;p.dodge=0;p.carDodge=0;p.vy=0;break}}
+  for(let i=0;i<race.rocks.length;i++){const r=race.rocks[i];if(old<=r.d&&p.d>=r.d&&!p.hits.includes(i)){p.hits.push(i);if(p.jump<3&&p.inv.rock<=0){p.stun=1;p.inv.rock=1;p.stunKind='rock';p.jump=0;p.vy=0}}}
+  for(const b of race.buses){if(frontContact(b,old,p.d,dt,BUS_SPEED,BUS_FRONT)){if(p.dodge>0&&!p.avoidedBuses.includes(b.id))p.avoidedBuses.push(b.id);if(p.avoidedBuses.includes(b.id)||p.inv.bus>0)continue;p.rideRoute=b.route||BUS_ROUTES[0];p.ride=previousStop(p.d).d;p.bellRung=false;if(p.d-p.ride<=99){p.busBells++;p.bellRung=true}p.jump=0;p.vy=0;p.dodge=0;break}}
+  if(p.ride===null)for(const c of race.cars){if(frontContact(c,old,p.d,dt,CAR_SPEED,CAR_FRONT)){if(p.carDodge>0&&!p.avoidedCars.includes(c.id))p.avoidedCars.push(c.id);if(p.avoidedCars.includes(c.id)||p.inv.car>0)continue;p.avoidedCars.push(c.id);p.carHits++;p.knockback={from:p.d,to:Math.max(0,p.d-30),elapsed:0,startJump:p.jump};p.stun=0;p.stunKind=null;p.dodge=0;p.carDodge=0;p.vy=0;break}}
   if(p.d>=TOTAL&&p.knockback===null){p.finish=race.t;race.done=true;race.winner=race.players.indexOf(p)}
  }
  if(race.t>=LIMIT&&!race.done){race.t=LIMIT;race.done=true;race.winner=null}
@@ -201,8 +204,8 @@ function landmark(d,kind){const x=sx(d),y=sy(d)+25;if(x<-520||x>W+520)return;ctx
 }
 function streetlight(d){const x=sx(d),y=sy(d)-2;rect(x-5,y-5,13,6,'#899485');rect(x,y-109,4,105,'#687c75');rect(x+1,y-109,2,102,'#a8b9ae');rect(x,y-113,24,5,'#617a73');rect(x+18,y-110,15,5,'#e6e0b3');rect(x+21,y-105,9,3,'#fff1b7')}
 function finishFlag(){const x=sx(1500),y=sy(1500);if(x<-50||x>W+50)return;rect(x-18,y-67,4,67,'#48614e');for(let i=0;i<5;i++)for(let j=0;j<3;j++)rect(x-14+i*6,y-67+j*6,6,6,(i+j)%2?'#f9f7e6':'#315440')}
-function behindCars(p){return p.ride===null&&p.knockback===null&&(p.carDodge>0||race.cars.some(c=>p.avoidedCars.includes(c.id)&&c.d-p.d>=-CAR_CONTACT-1&&c.d-p.d<=VIEW_RADIUS+CAR_CONTACT))}
-function drawRunner(p,t,mine,rear){const x=sx(p.d),y=sy(p.d)-3-(rear?7:0);if(p.ride!==null||x<-30||x>W+30)return;if(mine&&(p.dodge>0||rear))rect(x-17,y-55,34,58,rear?'#b7ddf088':'#c5ecdb88');if(!(p.inv>0&&Math.floor(t*12)%2))human(x,y,mine?'#347cdb':'#dd6459',mode==='menu'||race.t<0?0:t,p.jump,p.dodge>0||rear,p.knockback)}
+function behindCars(p){return p.ride===null&&p.knockback===null&&p.carDodge>0}
+function drawRunner(p,t,mine,rear){const x=sx(p.d),y=sy(p.d)-3-(rear?7:0);if(p.ride!==null||x<-30||x>W+30)return;if(mine&&(p.dodge>0||rear))rect(x-17,y-55,34,58,rear?'#b7ddf088':'#c5ecdb88');if(!(Object.values(p.inv).some(time=>time>0)&&Math.floor(t*12)%2))human(x,y,mine?'#347cdb':'#dd6459',mode==='menu'||race.t<0?0:t,p.jump,p.dodge>0||rear,p.knockback)}
 function render(t){const p=race.players[myIndex]||race.players[0];const desiredW=canvas.clientWidth<650?700:1100;const desiredH=Math.round(desiredW*canvas.clientHeight/canvas.clientWidth);if(W!==desiredW||H!==desiredH){W=canvas.width=desiredW;H=canvas.height=desiredH}ctx.imageSmoothingEnabled=false;cam=(p.d-VIEW_RADIUS)*pixelsPerMeter();camY=ground(p.d);rect(0,0,W,H,'#cde5dd');rect(0,0,W,H*.3,'#d9ece2');for(let i=0;i<7;i++){let x=((i*219-cam*.07)%(W+300)+(W+300))%(W+300)-100;cloud(x,35+i%3*29,1+i%2*.6)}
  for(let layer=0;layer<2;layer++){let pts=[[0,H]];for(let x=-40;x<W+50;x+=28){const n=x+cam*(layer?.12:.05);pts.push([x,H*(layer?.52:.39)+Math.sin(n*.008)*37+Math.sin(n*.019)*16])}pts.push([W,H]);poly(pts,layer?'#91b7a0':'#accbbb')}
  const from=(cam-200)/pixelsPerMeter(),to=(cam+W+200)/pixelsPerMeter();

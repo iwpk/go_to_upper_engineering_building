@@ -51,10 +51,10 @@ async function run(){
   await until(()=>g.eval('race.players[1].jump')>0,'state update');results.push('PASS authoritative state reaches guest');
   if(h.eval('myIndex')!==0||g.eval('myIndex')!==1)throw Error('player indices incorrect');
   results.push('PASS each browser owns its own player');
-  h.eval("race.cars=[{id:333,d:race.players[1].d+20,color:CAR_COLORS[2],model:'suv'}]");
+  h.eval("race.cars=[{id:333,d:race.players[1].d+4,color:CAR_COLORS[2],model:'suv'}]");
   g.eval("input('carDodge')");await until(()=>h.eval('race.players[1].avoidedCars.includes(333)'),'guest car avoidance');
   await until(()=>g.eval('race.players[1].avoidedCars.includes(333)&&race.cars.some(c=>c.id===333)'),'car state');results.push('PASS guest car avoidance and vehicle state synchronize');
-  h.eval("race.players[1].d=700;race.players[1].carDodge=0;race.players[1].inv=0;race.buses=[];race.cars=[{id:334,d:700,color:CAR_COLORS[1],model:'sedan'}]");
+  h.eval("race.players[1].d=700;race.players[1].carDodge=0;race.players[1].inv={rock:0,car:0,bus:0};race.buses=[];race.cars=[{id:334,d:700+CAR_FRONT,color:CAR_COLORS[1],model:'sedan'}]");
   await until(()=>g.eval('race.players[1].knockback!==null&&race.players[1].jump>0'),'airborne state');
   await until(()=>g.eval('race.players[1].knockback===null&&race.players[1].d<690'),'landing state');results.push('PASS airborne knockback and landing synchronize');
   h.eval('race.players[1].d=1499.99');await until(()=>g.eval('race.done'),'finish');
